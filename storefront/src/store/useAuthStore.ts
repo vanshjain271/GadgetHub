@@ -6,6 +6,7 @@ interface User {
   phone: string;
   role: string;
   name?: string;
+  email?: string;
 }
 
 interface AuthState {
@@ -19,6 +20,7 @@ interface AuthState {
   logout: () => void;
   openLoginModal: () => void;
   closeLoginModal: () => void;
+  updateUser: (userUpdates: Partial<User>) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -33,6 +35,7 @@ export const useAuthStore = create<AuthState>()(
       logout: () => set({ token: null, user: null, isAuthenticated: false }),
       openLoginModal: () => set({ isLoginModalOpen: true }),
       closeLoginModal: () => set({ isLoginModalOpen: false }),
+      updateUser: (userUpdates) => set((state) => ({ user: state.user ? { ...state.user, ...userUpdates } : null })),
     }),
     {
       name: 'gadgethub-auth-storage',

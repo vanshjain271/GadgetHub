@@ -1,7 +1,5 @@
 import useSWR from 'swr';
 import api from '@/lib/api';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useEffect } from 'react';
 
 const fetcher = (url: string) => api.get(url).then(res => res.data?.data || res.data);
 
@@ -43,53 +41,55 @@ export function useOrders() {
   };
 }
 
+export function useReviews(productId: string) {
+  const { data, error, isLoading, mutate } = useSWR(productId ? `/reviews?productId=${productId}` : null, fetcher);
+
+  return {
+    reviews: data?.data?.reviews || [],
+    isLoading,
+    isError: error,
+    mutate
+  };
+}
+
+export function useWishlist() {
+  const { data, error, isLoading, mutate } = useSWR('/users/wishlist', fetcher);
+
+  return {
+    wishlist: data?.data?.wishlist || [],
+    isLoading,
+    isError: error,
+    mutate
+  };
+}
+
 export function useBanners() {
   const { data, error, isLoading } = useSWR('/banners', fetcher);
   return { banners: data?.banners || [], error, isLoading };
 }
 
 export function useProducts(categoryId?: string, search?: string) {
-  const { isAuthenticated, openLoginModal } = useAuthStore();
-  
-  // We only fetch products if authenticated
   const queryParams = new URLSearchParams();
   if (categoryId) queryParams.append('categoryId', categoryId);
   if (search) queryParams.append('search', search);
   const queryString = queryParams.toString();
   const url = queryString ? `/products?${queryString}` : '/products';
 
-  const { data, error, isLoading } = useSWR(isAuthenticated ? url : null, fetcher, {
-    onError: (err) => {
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        openLoginModal();
-      }
-    }
-  });
-
-  // If not authenticated, we should proactively ask them to log in when trying to view products
-  useEffect(() => {
-    if (!isAuthenticated) {
-      openLoginModal();
-    }
-  }, [isAuthenticated, openLoginModal]);
+  const { data, error, isLoading } = useSWR(url, fetcher);
 
   return { products: data?.products || [], error, isLoading };
 }
 
 export function useProductDetail(productId: string) {
-  const { isAuthenticated, openLoginModal } = useAuthStore();
-  
   const { data, error, isLoading } = useSWR(
-    isAuthenticated && productId ? `/products/${productId}` : null, 
-    fetcher,
-    {
-      onError: (err) => {
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          openLoginModal();
-        }
-      }
-    }
+    productId ? `/products/${productId}` : null,
+    fetcher
   );
 
   return { product: data?.product || null, error, isLoading };
+}
+
+export function useSettings() {
+  const { data, error, isLoading } = useSWR('/settings', fetcher);
+  return { settings: data || {}, error, isLoading };
 }
