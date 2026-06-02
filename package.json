@@ -1,0 +1,14 @@
+{
+  "name": "gadgethub-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:admin": "npm run dev --prefix admin",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:admin\"",
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix admin"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,37 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+.next/
+**/.next/
+out/
+**/out/
+
+# Environment files and credentials
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+*.pem
+*.key
+certs/
+
+# Reference apps
+reference-youthqitapp/
+reference-youthqitapp
+
+# System files
+.DS_Store
+**/ .DS_Store
+Thumbs.db
