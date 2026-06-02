@@ -1,0 +1,856 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Box, Typography, Card, CardContent, Grid, TextField, Button,
+  FormControl, InputLabel, Select, MenuItem, Switch, FormControlLabel,
+  IconButton, Paper, Chip, Alert, Snackbar, CircularProgress,
+  ToggleButton, ToggleButtonGroup, Tooltip,
+} from '@mui/material';
+import {
+  Delete, CloudUpload, ArrowBack, Save, Add,
+  FormatBold, FormatItalic, FormatListBulleted, FormatListNumbered,
+  Undo, Redo,
+} from '@mui/icons-material';
+import { useNavigate, useParams } from 'react-router-dom';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5005/api/v1';
+
+interface ImagePreview {
+  id: string;
+  url: string;
+  file?: File;
+  isExisting: boolean;
+}
+
+interface VariantOption {
+  name: string;
+  sku: string;
+  color: string;
+  mrp: string;
+  salePrice: string;
+  stock: string;
+  isActive: boolean;
+}
+
+interface BulkPriceTier {
+  minQty: string;
+  salePrice: string;
+}
+
+/* ─── Mini Rich Text Editor ─────────────────────── */
+const RichEditor: React.FC<{
+  value: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  minHeight?: number;
+}> = ({ value, onChange, placeholder = 'Write here...', minHeight = 120 }) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const savedRange = useRef<Range | null>(null);
+
+  // Seed initial HTML once on mount only
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = value || '';
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save selection whenever user interacts with the editor
+  const saveSelection = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+  };
+
+  // Restore the saved selection before executing a command
+  const restoreSelection = () => {
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    if (savedRange.current) {
+      try { sel.addRange(savedRange.current); } catch (_) { }
+    } else {
+      // No saved selection — place caret at end of editor
+      editorRef.current?.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current!);
+      range.collapse(false);
+      sel.addRange(range);
+    }
+  };
+
+  const exec = (command: string, arg?: string) => {
+    editorRef.current?.focus();
+    restoreSelection();
+    document.execCommand(command, false, arg);
+    editorRef.current?.focus();
+    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  };
+
+  const handleInput = () => {
+    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  };
+
+  const toolbarBtn = (title: string, icon: React.ReactNode, cmd: string, arg?: string) => (
+    <Tooltip title={title} key={cmd + (arg || '')}>
+      <IconButton
+        size="small"
+        onPointerDown={(e) => {
+          // Save selection NOW (before the click can shift focus away)
+          saveSelection();
+          // Prevent the button from stealing focus
+          e.preventDefault();
+        }}
+        onClick={() => exec(cmd, arg)}
+        sx={{ borderRadius: 1, '&:hover': { bgcolor: '#E2E8F0' }, width: 30, height: 30 }}
+      >
+        {icon}
+      </IconButton>
+    </Tooltip>
+  );
+
+  return (
+    <Box sx={{
+      border: '1px solid #CBD5E1', borderRadius: 1.5, overflow: 'hidden',
+      '&:focus-within': { borderColor: 'primary.main', boxShadow: '0 0 0 2px rgba(59,130,246,0.1)' }
+    }}>
+      {/* Toolbar */}
+      <Box sx={{
+        display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap',
+        px: 1, py: 0.5, borderBottom: '1px solid #E2E8F0', bgcolor: '#fff',
+      }}>
+        {toolbarBtn('Undo', <Undo sx={{ fontSize: 17 }} />, 'undo')}
+        {toolbarBtn('Redo', <Redo sx={{ fontSize: 17 }} />, 'redo')}
+        <Box sx={{ width: '1px', alignSelf: 'stretch', bgcolor: '#E2E8F0', mx: 1, my: 0.5 }} />
+        {toolbarBtn('Bold', <FormatBold sx={{ fontSize: 17 }} />, 'bold')}
+        {toolbarBtn('Italic', <FormatItalic sx={{ fontSize: 17 }} />, 'italic')}
+        <Box sx={{ width: '1px', alignSelf: 'stretch', bgcolor: '#E2E8F0', mx: 1, my: 0.5 }} />
+        {toolbarBtn('Bullet List', <FormatListBulleted sx={{ fontSize: 17 }} />, 'insertUnorderedList')}
+        {toolbarBtn('Numbered List', <FormatListNumbered sx={{ fontSize: 17 }} />, 'insertOrderedList')}
+        <Box sx={{ width: '1px', alignSelf: 'stretch', bgcolor: '#E2E8F0', mx: 1, my: 0.5 }} />
+        <Select
+          size="small"
+          value="p"
+          onOpen={saveSelection}
+          onChange={(e) => { exec('formatBlock', e.target.value as string); }}
+          sx={{ height: 26, fontSize: 12, mx: 0.5, '& .MuiSelect-select': { py: 0.3, px: 1 }, border: 'none', '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+        >
+          <MenuItem value="p">Paragraph</MenuItem>
+          <MenuItem value="h1">Heading 1</MenuItem>
+          <MenuItem value="h2">Heading 2</MenuItem>
+          <MenuItem value="h3">Heading 3</MenuItem>
+          <MenuItem value="pre">Code</MenuItem>
+        </Select>
+      </Box>
+
+      {/* Editable area */}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={handleInput}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
+        onSelect={saveSelection}
+        data-placeholder={placeholder}
+        style={{
+          minHeight, padding: '10px 16px',
+          outline: 'none', fontSize: 14, color: '#1E293B',
+          lineHeight: 1.6,
+        }}
+      />
+      <style>{`
+        [data-placeholder]:empty:before {
+          content: attr(data-placeholder);
+          color: #94A3B8;
+        }
+        [contenteditable] ul { padding-left: 20px; }
+        [contenteditable] ol { padding-left: 20px; }
+        [contenteditable] pre { background: #F1F5F9; border-radius: 4px; padding: 8px; font-family: monospace; }
+        [contenteditable] strong { font-weight: 700; }
+        [contenteditable] b { font-weight: 700; }
+        [contenteditable] em { font-style: italic; }
+        [contenteditable] i { font-style: italic; }
+        [contenteditable] h1 { font-size: 1.8em; margin: 0.5em 0; }
+        [contenteditable] h2 { font-size: 1.4em; margin: 0.4em 0; }
+        [contenteditable] h3 { font-size: 1.2em; margin: 0.3em 0; }
+      `}</style>
+    </Box>
+  );
+};
+
+
+/* ─── Main Product Form ──────────────────────────── */
+const ProductForm: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEdit = Boolean(id);
+
+  // Basic info
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [sku, setSku] = useState('');
+  const [category, setCategory] = useState<string[]>([]);
+  const [brand, setBrand] = useState('');
+  const [colour, setColour] = useState('');
+  const [modal, setModal] = useState('');
+  const [warranty, setWarranty] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+
+  // Pricing
+  const [mrp, setMrp] = useState('');
+  const [salePrice, setSalePrice] = useState('');
+  const [taxMode, setTaxMode] = useState<'included' | 'excluded'>('excluded');
+  const [taxPercent, setTaxPercent] = useState<'' | '5' | '18'>('');
+
+  // Inventory
+  const [stock, setStock] = useState('');
+  const [lowStockThreshold, setLowStockThreshold] = useState('10');
+  const [unit, setUnit] = useState('Pcs');
+  const [minQuantity, setMinQuantity] = useState('1');
+  const [paymentMode, setPaymentMode] = useState('default');
+
+  // Status & Variants
+  const [isActive, setIsActive] = useState(true);
+  const [hasVariants, setHasVariants] = useState(false);
+  const [variants, setVariants] = useState<VariantOption[]>([]);
+
+  // Image state
+  const [images, setImages] = useState<ImagePreview[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+
+  // New Fields
+  const [homepageSections, setHomepageSections] = useState<string[]>([]);
+  const [bulkPricing, setBulkPricing] = useState<BulkPriceTier[]>([]);
+
+  // UI
+  const [categories, setCategories] = useState<any[]>([]);
+  const [brands, setBrands] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+
+  const getAuthHeaders = () => ({
+    'Authorization': `Bearer ${localStorage.getItem('admin_token')}`
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [catRes, brandRes] = await Promise.all([
+          fetch(`${API_BASE}/categories`, { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } }),
+          fetch(`${API_BASE}/admin/brands`, { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } }).catch(() => null)
+        ]);
+        const catData = await catRes.json();
+        if (catData.success || catData.data) {
+          setCategories(catData.data?.categories || catData.categories || catData.data || []);
+        }
+        if (brandRes?.ok) {
+          const brandData = await brandRes.json();
+          if (brandData.success || brandData.data) {
+            setBrands(brandData.data?.brands || brandData.brands || brandData.data || []);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load categories/brands', err);
+      }
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    const loadProduct = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/products/${id}`, {
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        const product = data.product || data.data || data;
+        if (product) {
+          setName(product.name || '');
+          setDescription(product.description || '');
+          setSku(product.sku || '');
+          setCategory(Array.isArray(product.category) ? product.category.map((c: any) => c._id || c) : (product.category ? [product.category._id || product.category] : []));
+          setBrand(product.brand?._id || product.brand || '');
+          setColour(product.colour || '');
+          setModal(product.modal || '');
+          setYoutubeUrl(product.youtubeUrl || '');
+          setWarranty(product.warranty || '');
+          setMrp(String(product.mrp || ''));
+          setSalePrice(String(product.salePrice || ''));
+          setTaxMode(product.taxMode || 'excluded');
+          setTaxPercent(product.taxRate ? String(product.taxRate) as '5' | '18' : ''); // Map taxRate -> taxPercent
+          setStock(String(product.stock || ''));
+          setLowStockThreshold(String(product.lowStockThreshold || '10'));
+          setUnit(product.unit || 'Pcs');
+          setMinQuantity(String(product.minOrderQty || product.minQuantity || '1')); // Map minOrderQty -> minQuantity
+          setPaymentMode(product.paymentMode || 'default');
+          setIsActive(product.isActive !== false);
+          setHasVariants(product.hasVariants || false);
+          if (product.variants?.length > 0) {
+            setVariants(product.variants.map((v: any) => ({
+              name: v.name || '', sku: v.sku || '', color: v.color || '', mrp: v.mrp ? String(v.mrp) : '',
+              salePrice: v.salePrice ? String(v.salePrice) : '', stock: v.stock ? String(v.stock) : '', isActive: v.isActive !== false
+            })));
+          }
+          setHomepageSections(product.homepageSections || []);
+          if (product.bulkPricing?.length > 0) {
+            setBulkPricing(product.bulkPricing.map((t: any) => ({
+              minQty: String(t.minQty),
+              salePrice: String(t.salePrice)
+            })));
+          }
+          if (product.images?.length > 0) {
+            setImages(product.images.map((url: any, idx: number) => ({
+              id: `existing-${idx}`,
+              url: typeof url === 'string' ? url : url?.url || url,
+              isExisting: true
+            })));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load product', err);
+        setSnackbar({ open: true, message: 'Failed to load product', severity: 'error' });
+      }
+      setLoading(false);
+    };
+    loadProduct();
+  }, [id]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setDragActive(true);
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setDragActive(false);
+  }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setDragActive(false);
+    addImageFiles(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/')));
+  }, []);
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addImageFiles(Array.from(e.target.files || []));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+  const addImageFiles = (files: File[]) => {
+    const newImages: ImagePreview[] = files.map(file => ({
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      url: URL.createObjectURL(file), file, isExisting: false
+    }));
+    setImages(prev => [...prev, ...newImages].slice(0, 10));
+  };
+  const removeImage = (imageId: string) => {
+    setImages(prev => {
+      const img = prev.find(i => i.id === imageId);
+      if (img && !img.isExisting) URL.revokeObjectURL(img.url);
+      return prev.filter(i => i.id !== imageId);
+    });
+  };
+
+  const addVariant = () => setVariants(prev => [...prev, { name: '', sku: '', color: '', mrp: '', salePrice: '', stock: '', isActive: true }]);
+  const updateVariant = (idx: number, field: keyof VariantOption, value: any) => {
+    setVariants(prev => prev.map((v, i) => i === idx ? { ...v, [field]: value } : v));
+  };
+  const removeVariant = (idx: number) => setVariants(prev => prev.filter((_, i) => i !== idx));
+
+  // Bulk Pricing handlers
+  const addBulkTier = () => setBulkPricing(prev => [...prev, { minQty: '', salePrice: '' }]);
+  const updateBulkTier = (idx: number, field: keyof BulkPriceTier, value: string) => {
+    setBulkPricing(prev => prev.map((t, i) => i === idx ? { ...t, [field]: value } : t));
+  };
+  const removeBulkTier = (idx: number) => setBulkPricing(prev => prev.filter((_, i) => i !== idx));
+
+  const toggleHomeSection = (section: string) => {
+    setHomepageSections(prev => 
+      prev.includes(section) ? prev.filter(s => s !== section) : [...prev, section]
+    );
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) { setSnackbar({ open: true, message: 'Product name is required', severity: 'error' }); return; }
+    if (!mrp || !salePrice) { setSnackbar({ open: true, message: 'MRP and Sale Price are required', severity: 'error' }); return; }
+    setSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append('name', name.trim());
+      formData.append('description', description);
+      formData.append('sku', (sku || '').trim());
+      if (category && category.length > 0) {
+        category.forEach(catId => formData.append('category', catId));
+      }
+      if (brand) formData.append('brand', brand);
+      if (colour) formData.append('colour', colour);
+      if (modal) formData.append('modal', modal);
+      if (youtubeUrl) formData.append('youtubeUrl', youtubeUrl);
+      formData.append('mrp', mrp);
+      formData.append('salePrice', salePrice);
+      formData.append('taxMode', taxMode);
+      if (taxPercent) formData.append('taxRate', taxPercent); // Map taxPercent -> taxRate
+      formData.append('stock', stock || '0');
+      formData.append('lowStockThreshold', lowStockThreshold || '10');
+      formData.append('unit', unit);
+      formData.append('minOrderQty', minQuantity || '1'); // Map minQuantity -> minOrderQty
+      formData.append('warranty', warranty || '');
+      formData.append('paymentMode', paymentMode);
+      formData.append('isActive', String(isActive));
+      formData.append('hasVariants', String(hasVariants));
+      if (hasVariants && variants.length > 0) {
+        const cleanedVariants = variants.map(v => ({
+          ...v,
+          mrp: v.mrp ? parseFloat(v.mrp) : undefined,
+          salePrice: v.salePrice ? parseFloat(v.salePrice) : undefined,
+          stock: v.stock ? parseInt(v.stock) : 0,
+        }));
+        formData.append('variants', JSON.stringify(cleanedVariants));
+      }
+      formData.append('homepageSections', JSON.stringify(homepageSections));
+      if (bulkPricing.length > 0) {
+        const cleanedBulk = bulkPricing
+          .filter(t => t.minQty && t.salePrice)
+          .map(t => ({ minQty: parseInt(t.minQty), salePrice: parseFloat(t.salePrice) }))
+          .sort((a, b) => a.minQty - b.minQty);
+        formData.append('bulkPricing', JSON.stringify(cleanedBulk));
+      }
+      const existingImageUrls = images.filter(i => i.isExisting).map(i => i.url);
+      formData.append('existingImages', JSON.stringify(existingImageUrls));
+      images.filter(i => !i.isExisting && i.file).forEach(img => formData.append('images', img.file!));
+
+      const url = isEdit ? `${API_BASE}/admin/products/${id}` : `${API_BASE}/admin/products`;
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('admin_token')}` },
+        body: formData
+      });
+      const result = await res.json();
+      if (result.success) {
+        setSnackbar({ open: true, message: isEdit ? 'Product updated!' : 'Product created!', severity: 'success' });
+        setTimeout(() => navigate('/catalog/products'), 1000);
+      } else {
+        // Show specific validation errors if available
+        let errorMsg = result.message || 'Failed to save product';
+        if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+          errorMsg = `${result.message}: ${result.errors[0].message}`;
+        }
+        setSnackbar({ open: true, message: errorMsg, severity: 'error' });
+      }
+    } catch (err) {
+      console.error('Save error:', err);
+      setSnackbar({ open: true, message: 'Failed to save product', severity: 'error' });
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this product? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const res = await fetch(`${API_BASE}/admin/products/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('admin_token')}` }
+      });
+      const result = await res.json();
+      if (result.success) {
+        setSnackbar({ open: true, message: 'Product deleted!', severity: 'success' });
+        setTimeout(() => navigate('/catalog/products'), 1000);
+      } else {
+        setSnackbar({ open: true, message: result.message || 'Failed to delete product', severity: 'error' });
+      }
+    } catch (err) {
+      console.error('Delete error:', err);
+      setSnackbar({ open: true, message: 'Failed to delete product', severity: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  const discountPct = mrp && salePrice && Number(salePrice) < Number(mrp)
+    ? Math.round((1 - Number(salePrice) / Number(mrp)) * 100)
+    : null;
+
+  return (
+    <Box>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton onClick={() => navigate('/catalog/products')}><ArrowBack /></IconButton>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>{isEdit ? 'Edit Product' : 'Add Product'}</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" onClick={() => navigate('/catalog/products')}>Cancel</Button>
+          {isEdit && (
+            <Button variant="outlined" color="error" startIcon={<Delete />} onClick={handleDelete} disabled={saving}>
+              Delete
+            </Button>
+          )}
+          <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <Save />}
+            onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving...' : isEdit ? 'Update Product' : 'Save Product'}
+          </Button>
+        </Box>
+      </Box>
+
+      <Grid container spacing={3}>
+        {/* Left Column */}
+        <Grid item xs={12} md={8}>
+          {/* Basic Info */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>Basic Information</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <TextField fullWidth label="Product Name *" value={name} onChange={(e) => setName(e.target.value)} required />
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: 'text.secondary' }}>Description</Typography>
+                  <RichEditor value={description} onChange={setDescription} placeholder="Full product description..." minHeight={140} />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Additional Fields */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>Additional Details</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="SKU" value={sku} onChange={(e) => setSku(e.target.value)} />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="Colour" value={colour} onChange={(e) => setColour(e.target.value)} placeholder="e.g. Black, Red+Blue" />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="Model / Series" value={modal} onChange={(e) => setModal(e.target.value)} placeholder="e.g. iPhone 15 Pro" />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="Measuring Unit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. Pcs, Box, Kg, Set" />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="Min. Quantity" type="number" value={minQuantity}
+                    onChange={(e) => setMinQuantity(e.target.value)} />
+                </Grid>
+                <Grid item xs={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Payment Mode</InputLabel>
+                    <Select value={paymentMode} label="Payment Mode" onChange={(e) => setPaymentMode(e.target.value)}>
+                      <MenuItem value="default">Default</MenuItem>
+                      <MenuItem value="cod">COD Only</MenuItem>
+                      <MenuItem value="prepaid">Prepaid Only</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField fullWidth label="Youtube URL" value={youtubeUrl} onChange={(e) => setYoutubeUrl(e.target.value)}
+                    placeholder="https://youtube.com/watch?v=..." />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField fullWidth label="Warranty (Optional)" value={warranty} onChange={(e) => setWarranty(e.target.value)} placeholder="e.g. '1 Year Manufacturer Warranty'" />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Images */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Product Images <Chip label={`${images.length}/10`} size="small" sx={{ ml: 1 }} />
+              </Typography>
+              <Paper
+                onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                sx={{
+                  p: 4, mb: 2, textAlign: 'center', cursor: 'pointer',
+                  border: '2px dashed',
+                  borderColor: dragActive ? 'primary.main' : 'divider',
+                  backgroundColor: dragActive ? 'action.hover' : 'background.default',
+                  transition: 'all 0.2s',
+                  '&:hover': { borderColor: 'primary.main', backgroundColor: 'action.hover' }
+                }}
+              >
+                <CloudUpload sx={{ fontSize: 48, color: dragActive ? 'primary.main' : 'action.disabled', mb: 1 }} />
+                <Typography variant="body1" color="text.secondary">Drag & drop images here or click to browse</Typography>
+                <Typography variant="caption" color="text.secondary">JPEG, PNG, WebP • Max 5MB each • Up to 10 images</Typography>
+              </Paper>
+              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={handleFileSelect} />
+              {images.length > 0 && (
+                <Grid container spacing={1}>
+                  {images.map((img, idx) => (
+                    <Grid item key={img.id}>
+                      <Box sx={{
+                        position: 'relative', width: 120, height: 120, borderRadius: 2, overflow: 'hidden',
+                        border: idx === 0 ? '3px solid' : '1px solid',
+                        borderColor: idx === 0 ? 'primary.main' : 'divider'
+                      }}>
+                        <img src={img.url} alt={`Product ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        {idx === 0 && <Chip label="Main" size="small" color="primary" sx={{ position: 'absolute', top: 4, left: 4, fontSize: '0.65rem', height: 20 }} />}
+                        <IconButton size="small" onClick={() => removeImage(img.id)}
+                          sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(0,0,0,0.5)', color: '#fff', '&:hover': { bgcolor: 'rgba(255,0,0,0.7)' }, width: 24, height: 24 }}>
+                          <Delete sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </Box>
+                    </Grid>
+                  ))}
+                </Grid>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Variants */}
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Variants</Typography>
+                <FormControlLabel control={<Switch checked={hasVariants} onChange={(e) => setHasVariants(e.target.checked)} />} label="Has Variants" />
+              </Box>
+              {hasVariants && (
+                <>
+                  {variants.map((variant, idx) => (
+                    <Paper key={idx} sx={{ p: 2, mb: 1, border: '1px solid', borderColor: 'divider' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle2" color="text.secondary">Variant {idx + 1}</Typography>
+                        <IconButton size="small" color="error" onClick={() => removeVariant(idx)}><Delete fontSize="small" /></IconButton>
+                      </Box>
+                      <Grid container spacing={1}>
+                        <Grid item xs={4}><TextField size="small" fullWidth label="Name" value={variant.name} onChange={(e) => updateVariant(idx, 'name', e.target.value)} placeholder="e.g. Small, Red" /></Grid>
+                        <Grid item xs={4}><TextField size="small" fullWidth label="SKU" value={variant.sku} onChange={(e) => updateVariant(idx, 'sku', e.target.value)} /></Grid>
+                        <Grid item xs={4}><TextField size="small" fullWidth label="Color" value={variant.color} onChange={(e) => updateVariant(idx, 'color', e.target.value)} placeholder="e.g. Red, #000" /></Grid>
+                        <Grid item xs={4}><TextField size="small" fullWidth label="MRP" type="number" value={variant.mrp} onChange={(e) => updateVariant(idx, 'mrp', e.target.value)} placeholder="Leave blank to inherit" /></Grid>
+                        <Grid item xs={4}><TextField size="small" fullWidth label="Sale Price" type="number" value={variant.salePrice} onChange={(e) => updateVariant(idx, 'salePrice', e.target.value)} placeholder="Leave blank to inherit" /></Grid>
+                        <Grid item xs={4}><TextField size="small" fullWidth label="Stock" type="number" value={variant.stock} onChange={(e) => updateVariant(idx, 'stock', e.target.value)} placeholder="0" /></Grid>
+                      </Grid>
+                    </Paper>
+                  ))}
+                  <Button startIcon={<Add />} onClick={addVariant} sx={{ mt: 1 }}>Add Variant</Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Right Column */}
+        <Grid item xs={12} md={4}>
+          {/* Pricing + Tax */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>Pricing</Typography>
+              <Grid container spacing={2}>
+                {/* Sale Price row with Tax Incl/Excl */}
+                <Grid item xs={12}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>Sale Price (₹)</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mt: 0.5 }}>
+                    <TextField
+                      fullWidth type="number" value={salePrice}
+                      onChange={(e) => setSalePrice(e.target.value)} required
+                      placeholder="0"
+                      helperText={discountPct ? `${discountPct}% off MRP` : ''}
+                    />
+                    <ToggleButtonGroup
+                      value={taxMode}
+                      exclusive
+                      onChange={(_, v) => { if (v) setTaxMode(v); }}
+                      size="small"
+                      sx={{ flexShrink: 0, mt: 0.5 }}
+                    >
+                      <ToggleButton value="included" sx={{ px: 1, py: 0.5, fontSize: 12, fontWeight: 600, '&.Mui-selected': { bgcolor: '#3B82F6', color: '#fff', '&:hover': { bgcolor: '#2563EB' } } }}>
+                        Tax Incl.
+                      </ToggleButton>
+                      <ToggleButton value="excluded" sx={{ px: 1, py: 0.5, fontSize: 12, fontWeight: 600, '&.Mui-selected': { bgcolor: '#3B82F6', color: '#fff', '&:hover': { bgcolor: '#2563EB' } } }}>
+                        Tax Excl.
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+                </Grid>
+
+                {/* MRP + Tax% */}
+                <Grid item xs={6}>
+                  <TextField fullWidth label="MRP (₹)" type="number" value={mrp} onChange={(e) => setMrp(e.target.value)} required />
+                </Grid>
+                <Grid item xs={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Tax %</InputLabel>
+                    <Select value={taxPercent} label="Tax %" onChange={(e) => setTaxPercent(e.target.value as any)}>
+                      <MenuItem value="">Optional (None)</MenuItem>
+                      <MenuItem value="5">5%</MenuItem>
+                      <MenuItem value="18">18%</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                {/* Tax amount info */}
+                {taxPercent && salePrice && (
+                  <Grid item xs={12}>
+                    <Box sx={{ bgcolor: '#EFF6FF', borderRadius: 1, p: 1, border: '1px solid #BFDBFE' }}>
+                      <Typography variant="caption" color="primary">
+                        {taxMode === 'included' ? (
+                          `Price includes ₹${(Number(salePrice) * Number(taxPercent) / (100 + Number(taxPercent))).toFixed(2)} tax (${taxPercent}%)`
+                        ) : (
+                          `+ ₹${(Number(salePrice) * Number(taxPercent) / 100).toFixed(2)} tax (${taxPercent}%) → Total: ₹${(Number(salePrice) * (1 + Number(taxPercent) / 100)).toFixed(2)}`
+                        )}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                )}
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Inventory */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>Inventory</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="Stock" type="number" value={stock} onChange={(e) => setStock(e.target.value)} />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="Low Stock Alert" type="number" value={lowStockThreshold} onChange={(e) => setLowStockThreshold(e.target.value)} />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Organization */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>Organization</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Categories</InputLabel>
+                    <Select
+                      multiple
+                      value={category}
+                      label="Categories"
+                      onChange={(e) => setCategory(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {(selected as string[]).map((value) => {
+                            const cat = categories.find(c => c._id === value);
+                            return <Chip key={value} label={cat?.name || value} size="small" />;
+                          })}
+                        </Box>
+                      )}
+                    >
+                      {categories
+                        .filter(c => !c.parent) // Get root categories
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map(root => (
+                          [
+                            <MenuItem key={root._id} value={root._id} sx={{ fontWeight: 'bold' }}>
+                              {root.name}
+                            </MenuItem>,
+                            ...categories
+                              .filter(sub => (typeof sub.parent === 'string' ? sub.parent : sub.parent?._id) === root._id)
+                              .sort((a, b) => a.name.localeCompare(b.name))
+                              .map(sub => (
+                                <MenuItem key={sub._id} value={sub._id} sx={{ pl: 4 }}>
+                                  — {sub.name}
+                                </MenuItem>
+                              ))
+                          ]
+                        ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Brand</InputLabel>
+                    <Select value={brand} label="Brand" onChange={(e) => setBrand(e.target.value)}>
+                      <MenuItem value="">None</MenuItem>
+                      {brands.map((b: any) => <MenuItem key={b._id} value={b._id}>{b.name}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Homepage Visibility */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>Homepage Visibility</Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {[
+                  { id: 'NEW_ARRIVAL', label: 'New Arrival' },
+                  { id: 'TRENDING', label: 'Trending' },
+                  { id: 'FEATURED', label: 'Featured Deal' },
+                  { id: 'PREMIUM_CASES', label: 'Premium Cases' },
+                  { id: 'CABLES', label: 'Cables' },
+                  { id: 'ADAPTERS', label: 'Adapters' },
+                ].map(section => (
+                  <Chip
+                    key={section.id}
+                    label={section.label}
+                    color={homepageSections.includes(section.id) ? 'primary' : 'default'}
+                    onClick={() => toggleHomeSection(section.id)}
+                    sx={{ cursor: 'pointer' }}
+                  />
+                ))}
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* Bulk Pricing / Tiered Discounts */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Bulk Pricing (Tiered Discounts)</Typography>
+                <Button startIcon={<Add />} size="small" onClick={addBulkTier}>Add Tier</Button>
+              </Box>
+              {bulkPricing.length === 0 && (
+                <Typography variant="body2" color="text.secondary">No bulk discounts set for this product.</Typography>
+              )}
+              {bulkPricing.map((tier, idx) => (
+                <Box key={idx} sx={{ display: 'flex', gap: 2, mb: 1, alignItems: 'center' }}>
+                  <TextField
+                    size="small" label="Min Qty" type="number"
+                    value={tier.minQty} onChange={(e) => updateBulkTier(idx, 'minQty', e.target.value)}
+                    sx={{ width: 100 }}
+                  />
+                  <TextField
+                    size="small" label="Price (₹) Each" type="number"
+                    value={tier.salePrice} onChange={(e) => updateBulkTier(idx, 'salePrice', e.target.value)}
+                    sx={{ flex: 1 }}
+                  />
+                  <IconButton size="small" color="error" onClick={() => removeBulkTier(idx)}>
+                    <Delete fontSize="small" />
+                  </IconButton>
+                </Box>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Status */}
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>Status</Typography>
+              <FormControlLabel
+                control={<Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} color="success" />}
+                label={isActive ? 'Active — Visible to customers' : 'Inactive — Hidden from store'}
+              />
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar({ ...snackbar, open: false })}>
+        <Alert severity={snackbar.severity}>{snackbar.message}</Alert>
+      </Snackbar>
+    </Box>
+  );
+};
+
+export default ProductForm;
