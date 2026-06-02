@@ -110,9 +110,39 @@ const removeFCMToken = async (req, res) => {
   }
 };
 
+const getWishlist = async (req, res) => {
+  try {
+    const user = await require('../models/User').findById(req.user.userId).populate('wishlist');
+    return res.status(200).json({ success: true, wishlist: user.wishlist });
+  } catch (error) {
+    console.error('Get Wishlist Error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+const toggleWishlist = async (req, res) => {
+  try {
+    const { productId } = req.body;
+    const user = await require('../models/User').findById(req.user.userId);
+    const index = user.wishlist.indexOf(productId);
+    if (index === -1) {
+      user.wishlist.push(productId);
+    } else {
+      user.wishlist.splice(index, 1);
+    }
+    await user.save();
+    return res.status(200).json({ success: true, wishlist: user.wishlist });
+  } catch (error) {
+    console.error('Toggle Wishlist Error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   updateFCMToken,
-  removeFCMToken
+  removeFCMToken,
+  getWishlist,
+  toggleWishlist
 };

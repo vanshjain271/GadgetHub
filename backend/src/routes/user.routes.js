@@ -41,4 +41,18 @@ router.post('/fcm-token', buyerOrAdmin, UserController.updateFCMToken);
  */
 router.delete('/fcm-token', buyerOrAdmin, UserController.removeFCMToken);
 
+/**
+ * @route   GET /api/v1/users/wishlist
+ * @desc    Get user wishlist
+ * @access  Buyer, Admin
+ */
+router.get('/wishlist', buyerOrAdmin, UserController.getWishlist);
+
+/**
+ * @route   POST /api/v1/users/wishlist
+ * @desc    Toggle wishlist item
+ * @access  Buyer, Admin
+ */
+router.post('/wishlist', buyerOrAdmin, UserController.toggleWishlist);
+
 module.exports = router;

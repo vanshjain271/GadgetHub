@@ -135,6 +135,10 @@ const userSchema = new mongoose.Schema({
     type: [addressSchema],
     default: []
   },
+  wishlist: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product'
+  }],
   otp: {
     type: otpSchema,
     select: false
