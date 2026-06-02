@@ -61,8 +61,12 @@ app.use(cors({
     'https://admin.gadgethub.com',
     'https://www.admin.gadgethub.com',
     'https://gadgethubapp-admin.vercel.app',
-    'http://localhost:3001',
-    'http://localhost:5173',
+    'https://gadgethub.com',
+    'https://www.gadgethub.com',
+    'http://localhost:3000', // Storefront (Next.js default)
+    'http://localhost:3001', // Admin panel
+    'http://localhost:3002', // Storefront (custom port)
+    'http://localhost:5173', // Old Vite admin
   ],
   credentials: true,
 }));
