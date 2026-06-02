@@ -1,0 +1,118 @@
+/**
+ * User Controller - MVP
+ * 
+ * STRICT RULES:
+ * - No DB calls
+ * - Only input validation + service calls
+ * - Role checks handled by middleware
+ */
+
+const UserService = require('../services/user.service');
+
+/**
+ * @desc    Get current user profile
+ * @route   GET /api/v1/users/me
+ * @access  Buyer, Admin
+ */
+const getProfile = async (req, res) => {
+  try {
+    const result = await UserService.getProfile(req.user.userId);
+    
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+    
+    return res.status(200).json({
+      success: true,
+      user: result.user
+    });
+  } catch (error) {
+    console.error('Get Profile Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while fetching profile'
+    });
+  }
+};
+
+/**
+ * @desc    Update current user profile
+ * @route   PUT /api/v1/users/me
+ * @access  Buyer, Admin
+ * @body    { name?, addresses? }
+ */
+const updateProfile = async (req, res) => {
+  try {
+    const { name, email, addresses } = req.body;
+    
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (email !== undefined) updates.email = email;
+    if (addresses !== undefined) updates.addresses = addresses;
+    
+    const result = await UserService.updateProfile(req.user.userId, updates);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      user: result.user
+    });
+  } catch (error) {
+    console.error('Update Profile Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while updating profile'
+    });
+  }
+};
+
+/**
+ * @desc    Update or add FCM token
+ * @route   POST /api/v1/users/fcm-token
+ * @access  Buyer, Admin
+ */
+const updateFCMToken = async (req, res) => {
+  try {
+    const { token, device } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+
+    const result = await UserService.updateFCMToken(req.user.userId, token, device);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Update FCM Token Error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+/**
+ * @desc    Remove FCM token
+ * @route   DELETE /api/v1/users/fcm-token
+ * @access  Buyer, Admin
+ */
+const removeFCMToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+
+    const result = await UserService.removeFCMToken(req.user.userId, token);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Remove FCM Token Error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+module.exports = {
+  getProfile,
+  updateProfile,
+  updateFCMToken,
+  removeFCMToken
+};
